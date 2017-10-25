@@ -9,129 +9,153 @@ import tensorflow as tf
 from utils import *
 from network import Network
 from statistic import Statistic
+import argparse
+from tensorflow.examples.tutorials.mnist import input_data
+import gym
+import gym.wrappers as gym
 
-flags = tf.app.flags
 
-# network
-flags.DEFINE_string("model", "pixel_cnn", "name of model [pixel_rnn, pixel_cnn]")
-flags.DEFINE_integer("batch_size", 100, "size of a batch")
-flags.DEFINE_integer("hidden_dims", 16, "dimesion of hidden states of LSTM or Conv layers")
-flags.DEFINE_integer("recurrent_length", 7, "the length of LSTM or Conv layers")
-flags.DEFINE_integer("out_hidden_dims", 32, "dimesion of hidden states of output Conv layers")
-flags.DEFINE_integer("out_recurrent_length", 2, "the length of output Conv layers")
-flags.DEFINE_boolean("use_residual", False, "whether to use residual connections or not")
-# flags.DEFINE_boolean("use_dynamic_rnn", False, "whether to use dynamic_rnn or not")
+def parse_args():
+  parser = argparse.ArgumentParser()
 
-# training
-flags.DEFINE_integer("max_epoch", 100000, "# of step in an epoch")
-flags.DEFINE_integer("test_step", 100, "# of step to test a model")
-flags.DEFINE_integer("save_step", 1000, "# of step to save a model")
-flags.DEFINE_float("learning_rate", 1e-3, "learning rate")
-flags.DEFINE_float("grad_clip", 1, "value of gradient to be used for clipping")
-flags.DEFINE_boolean("use_gpu", True, "whether to use gpu for training")
+  # network
+  parser.add_argument("--model", type=str, default="pixel_cnn", help="name of model [pixel_rnn, pixel_cnn]")
+  parser.add_argument("--batch_size", type=int, default=100, help="size of a batch")
+  parser.add_argument("--hidden_dims", type=int, default=16, help="dimesion of hidden states of LSTM or Conv layers")
+  parser.add_argument("--recurrent_length", type=int, default=7, help="the length of LSTM or Conv layers")
+  parser.add_argument("--out_hidden_dims", type=int, default=32, help="dimesion of hidden states of output Conv layers")
+  parser.add_argument("--out_recurrent_length", type=int, default=2, help="the length of output Conv layers")
+  parser.add_argument("--use_residual",type=bool, default=False, help="whether to use residual connections or not")
+  parser.add_argument("--use_dynamic_rnn", type=bool, default=False, help="whether to use dynamic_rnn or not")
 
-# data
-flags.DEFINE_string("data", "mnist", "name of dataset [mnist, cifar]")
-flags.DEFINE_string("data_dir", "data", "name of data directory")
-flags.DEFINE_string("sample_dir", "samples", "name of sample directory")
+  # training
+  parser.add_argument("--max_epoch", type=int, default=100000, help="# of step in an epoch")
+  parser.add_argument("--test_step", type=int, default=100, help="# of step to test a model")
+  parser.add_argument("--save_step", type=int, default=1000, help="# of step to save a model")
+  parser.add_argument("--learning_rate", type=float, default=1e-3, help="learning rate")
+  parser.add_argument("--grad_clip", type=int, default=1, help="value of gradient to be used for clipping")
+  parser.add_argument("--gpu", type=int, default=-1, help="which gpu to use for training; -1 default")
 
-# Debug
-flags.DEFINE_boolean("is_train", True, "training or testing")
-flags.DEFINE_boolean("display", False, "whether to display the training results or not")
-flags.DEFINE_string("log_level", "INFO", "log level [DEBUG, INFO, WARNING, ERROR, CRITICAL]")
-flags.DEFINE_integer("random_seed", 123, "random seed for python")
+  # data
+  parser.add_argument("--data", type=str, default="mnist", help="name of dataset [mnist, gym]")
+  parser.add_argument("--env_id", type=str, default=None, help='when using gym data, specify an env')
+  parser.add_argument("--data_dir", type=str, default="data", help="name of data directory")
+  parser.add_argument("--sample_dir", type=str, default="samples", help="name of sample directory")
 
-conf = flags.FLAGS
+  # Debug
+  parser.add_argument("--is_train", type=str, default=True, help="training or testing")
+  parser.add_argument("--display", type=bool, default=False, help="whether to display the training results or not")
+  parser.add_argument("--log_level", type=str, default="INFO", help="log level [DEBUG, INFO, WARNING, ERROR, CRITICAL]")
+  parser.add_argument("--random_seed", type=int, default=123, help="random seed for python")
+  return parser.parse_args()
 
-# logging
-logger = logging.getLogger()
-logger.setLevel(conf.log_level)
+def check_and_load_data(env, filename, phase='train'):
+  if not os.path.exists(filename):
+    data = gather_data(env, phase)
+    pickle.dump(data, open(filename, 'wb'))
+  else:
+    data = pickle.load(open(filename, 'rb'))
+  return data
 
-# random seed
-tf.set_random_seed(conf.random_seed)
-np.random.seed(conf.random_seed)
+def prepocess_frame(frame, bins=8):
+  obs = frame[:,:,:1]
+  obs = np.round(obs * bins).astype(np.uint8)
+  return obs
 
-def main(_):
-  model_dir = get_model_dir(conf,
-      ['data_dir', 'sample_dir', 'max_epoch', 'test_step', 'save_step',
-       'is_train', 'random_seed', 'log_level', 'display'])
-  preprocess_conf(conf)
+def gather_data(env, phase='train'):
+  if phase == 'train':
+    num_eps = 60
+  else:
+    num_eps = 20
+  num_actions = env.action_space.n
+  eps = 0; obs = env.reset(); data = []
+  while eps < num_eps:
+    obs, rew, done, info = env.step(np.random.choice(env.action_space.n))
+    data.append(preprocess_frame(obs))
+    if done:
+      obs = env.reset()
+      eps += 1
+  return np.array(data)
 
-  DATA_DIR = os.path.join(conf.data_dir, conf.data)
-  SAMPLE_DIR = os.path.join(conf.sample_dir, conf.data, model_dir)
+def main(args):
+
+  # logging
+  logger = logging.getLogger()
+  logger.setLevel(args.log_level)
+
+  # random seed
+  tf.set_random_seed(args.random_seed)
+  np.random.seed(args.random_seed)
+
+  data_dir = os.path.join(args.data_dir, args.data)
+  sample_dir = os.path.join(args.sample_dir, args.data)
 
   check_and_create_dir(DATA_DIR)
   check_and_create_dir(SAMPLE_DIR)
 
   # 0. prepare datasets
-  if conf.data == "mnist":
-    from tensorflow.examples.tutorials.mnist import input_data
+  if args.data == "mnist":
     mnist = input_data.read_data_sets(DATA_DIR, one_hot=True)
 
-    next_train_batch = lambda x: mnist.train.next_batch(x)[0]
-    next_test_batch = lambda x: mnist.test.next_batch(x)[0]
-
     height, width, channel = 28, 28, 1
+    next_train_batch = lambda x: binarize(mnist.train.next_batch(x)).reshape([x, height, width, channel])
+    next_test_batch = lambda x: binarize(mnist.test.next_batch(x)).reshape([x, height, width, channel])
 
-    train_step_per_epoch = mnist.train.num_examples / conf.batch_size
-    test_step_per_epoch = mnist.test.num_examples / conf.batch_size
-  elif conf.data == "cifar":
-    from cifar10 import IMAGE_SIZE, inputs
+    train_step_per_epoch = mnist.train.num_examples / args.batch_size
+    test_step_per_epoch = mnist.test.num_examples / args.batch_size
 
-    maybe_download_and_extract(DATA_DIR)
-    images, labels = inputs(eval_data=False,
-        data_dir=os.path.join(DATA_DIR, 'cifar-10-batches-bin'), batch_size=conf.batch_size)
+  elif args.data == 'gym':
+    env = gym.make(args.env_id + "NoFrameskip-v4")
+    env = wrappers.ScaledFloatFrame(wrappers.wrap_deepmind(env))
+    train_data = check_and_load_data(env, DATA_DIR + "/train_data.pkl", phase='train')
+    test_data = check_and_load_data(env, DATA_DIR + "/test_data.pkl", phase='test')
 
-    height, width, channel = IMAGE_SIZE, IMAGE_SIZE, 3
+    next_train_batch = lambda x: train_data[np.random.randint(len(train_data), size=x)]
+    next_test_batch = lambda x: test_data[np.random.randint(len(test_data), size=x)]
+    height, width, channel = 84, 84, 1
+
+    train_step_per_epoch = train_data.shape[0] / args.batch_size
+    test_step_per_epoch = test_data.shape[0] / args.batch
+
 
   with tf.Session() as sess:
-    network = Network(sess, conf, height, width, channel)
-
-    stat = Statistic(sess, conf.data, model_dir, tf.trainable_variables(), conf.test_step)
+    network = Network(sess, args, height, width, channel)
+    stat = Statistic(sess, args.data, model_dir, tf.trainable_variables(), args.test_step)
     stat.load_model()
 
-    if conf.is_train:
+    if args.is_train:
       logger.info("Training starts!")
-
       initial_step = stat.get_t() if stat else 0
-      iterator = trange(conf.max_epoch, ncols=70, initial=initial_step)
+      iterator = trange(args.max_epoch, ncols=70, initial=initial_step)
 
       for epoch in iterator:
         # 1. train
         total_train_costs = []
         for idx in xrange(train_step_per_epoch):
-          images = binarize(next_train_batch(conf.batch_size)) \
-            .reshape([conf.batch_size, height, width, channel])
-
+          images = next_train_batch(args.batch_size)
           cost = network.test(images, with_update=True)
           total_train_costs.append(cost)
-
+        
         # 2. test
         total_test_costs = []
         for idx in xrange(test_step_per_epoch):
-          images = binarize(next_test_batch(conf.batch_size)) \
-            .reshape([conf.batch_size, height, width, channel])
-
+          images = next_test_batch(args.batch_size)
           cost = network.test(images, with_update=False)
           total_test_costs.append(cost)
 
         avg_train_cost, avg_test_cost = np.mean(total_train_costs), np.mean(total_test_costs)
-
         stat.on_step(avg_train_cost, avg_test_cost)
 
         # 3. generate samples
         samples = network.generate()
-        save_images(samples, height, width, 10, 10,
-            directory=SAMPLE_DIR, prefix="epoch_%s" % epoch)
-
+        save_images(samples, height, width, 10, 10, directory=SAMPLE_DIR, prefix="epoch_%s" % epoch)
         iterator.set_description("train l: %.3f, test l: %.3f" % (avg_train_cost, avg_test_cost))
-        print
     else:
       logger.info("Image generation starts!")
-
       samples = network.generate()
       save_images(samples, height, width, 10, 10, directory=SAMPLE_DIR)
 
 
 if __name__ == "__main__":
-  tf.app.run()
+  args = parse_args()
+  main(args)

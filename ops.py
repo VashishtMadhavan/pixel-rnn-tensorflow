@@ -18,15 +18,6 @@ data_format = "NCHW"
 def get_shape(layer):
   return layer.get_shape().as_list()
 
-#def get_shape(layer):
-#  if data_format == "NHWC":
-#    batch, height, width, channel = layer.get_shape().as_list()
-#  elif data_format == "NCHW":
-#    batch, channel, height, width = layer.get_shape().as_list()
-#  else:
-#    raise ValueError("Unknown data_format: %s" % data_format)
-#  return batch, height, width, channel
-
 def skew(inputs, scope="skew"):
   with tf.name_scope(scope):
     batch, height, width, channel = get_shape(inputs) # [batch, height, width, channel]
