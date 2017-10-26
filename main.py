@@ -40,7 +40,7 @@ def parse_args():
   parser.add_argument("--data", type=str, default="mnist", help="name of dataset [mnist, gym]")
   parser.add_argument("--env_id", type=str, default=None, help='when using gym data, specify an env')
   parser.add_argument("--data_dir", type=str, default="data", help="name of data directory")
-  parser.add_argument("--sample_dir", type=str, default="samples", help="name of sample directory")
+  parser.add_argument("--output_dir", type=str, default='model_output', help='where to store all model data')
 
   # Debug
   parser.add_argument("--is_train", type=str, default=True, help="training or testing")
@@ -88,39 +88,40 @@ def main(args):
   np.random.seed(args.random_seed)
 
   data_dir = os.path.join(args.data_dir, args.data)
-  sample_dir = os.path.join(args.sample_dir, args.data)
-
-  check_and_create_dir(DATA_DIR)
-  check_and_create_dir(SAMPLE_DIR)
+  output_dir = os.path.join(args.output_dir, args.data)
+  check_and_create_dir(data_dir)
+  check_and_create_dir(output_dir)
 
   # 0. prepare datasets
   if args.data == "mnist":
-    mnist = input_data.read_data_sets(DATA_DIR, one_hot=True)
+    mnist = input_data.read_data_sets(data_dir, one_hot=True)
 
     height, width, channel = 28, 28, 1
-    next_train_batch = lambda x: binarize(mnist.train.next_batch(x)).reshape([x, height, width, channel])
-    next_test_batch = lambda x: binarize(mnist.test.next_batch(x)).reshape([x, height, width, channel])
+    color_dim = 2
+    next_train_batch = lambda x: binarize(mnist.train.next_batch(x)[0]).reshape([x, height, width, channel])
+    next_test_batch = lambda x: binarize(mnist.test.next_batch(x)[0]).reshape([x, height, width, channel])
 
-    train_step_per_epoch = mnist.train.num_examples / args.batch_size
-    test_step_per_epoch = mnist.test.num_examples / args.batch_size
+    train_step_per_epoch = mnist.train.num_examples // args.batch_size
+    test_step_per_epoch = mnist.test.num_examples // args.batch_size
 
   elif args.data == 'gym':
     env = gym.make(args.env_id + "NoFrameskip-v4")
     env = wrappers.ScaledFloatFrame(wrappers.wrap_deepmind(env))
-    train_data = check_and_load_data(env, DATA_DIR + "/train_data.pkl", phase='train')
-    test_data = check_and_load_data(env, DATA_DIR + "/test_data.pkl", phase='test')
+    train_data = check_and_load_data(env, data_dir + "/train_data.pkl", phase='train')
+    test_data = check_and_load_data(env, data_dir + "/test_data.pkl", phase='test')
 
     next_train_batch = lambda x: train_data[np.random.randint(len(train_data), size=x)]
     next_test_batch = lambda x: test_data[np.random.randint(len(test_data), size=x)]
     height, width, channel = 84, 84, 1
+    color_dim = 8
 
-    train_step_per_epoch = train_data.shape[0] / args.batch_size
-    test_step_per_epoch = test_data.shape[0] / args.batch
+    train_step_per_epoch = train_data.shape[0] // args.batch_size
+    test_step_per_epoch = test_data.shape[0] // args.batch
 
 
   with tf.Session() as sess:
-    network = Network(sess, args, height, width, channel)
-    stat = Statistic(sess, args.data, model_dir, tf.trainable_variables(), args.test_step)
+    network = Network(sess, args, height, width, channel, color_dim=color_dim)
+    stat = Statistic(sess, args.data, output_dir, tf.trainable_variables(), args.test_step)
     stat.load_model()
 
     if args.is_train:
@@ -130,30 +131,32 @@ def main(args):
 
       for epoch in iterator:
         # 1. train
-        total_train_costs = []
-        for idx in xrange(train_step_per_epoch):
+        total_train_costs = []; total_train_logl = []
+        for idx in range(train_step_per_epoch):
           images = next_train_batch(args.batch_size)
-          cost = network.test(images, with_update=True)
+          logl, cost = network.test(images, update=True)
           total_train_costs.append(cost)
+          total_train_logl.append(logl)
         
         # 2. test
-        total_test_costs = []
-        for idx in xrange(test_step_per_epoch):
+        total_test_costs = []; total_test_logl = []
+        for idx in range(test_step_per_epoch):
           images = next_test_batch(args.batch_size)
-          cost = network.test(images, with_update=False)
+          logl, cost = network.test(images, update=False)
           total_test_costs.append(cost)
+          total_test_logl.append(logl)
 
         avg_train_cost, avg_test_cost = np.mean(total_train_costs), np.mean(total_test_costs)
         stat.on_step(avg_train_cost, avg_test_cost)
 
         # 3. generate samples
         samples = network.generate()
-        save_images(samples, height, width, 10, 10, directory=SAMPLE_DIR, prefix="epoch_%s" % epoch)
+        save_images(samples, height, width, 10, 10, directory=output_dir, prefix="epoch_%s" % epoch)
         iterator.set_description("train l: %.3f, test l: %.3f" % (avg_train_cost, avg_test_cost))
     else:
       logger.info("Image generation starts!")
       samples = network.generate()
-      save_images(samples, height, width, 10, 10, directory=SAMPLE_DIR)
+      save_images(samples, height, width, 10, 10, directory=output_dir)
 
 
 if __name__ == "__main__":

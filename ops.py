@@ -74,8 +74,8 @@ def conv2d(
     activation_fn=None,
     weights_initializer=WEIGHT_INITIALIZER,
     weights_regularizer=None,
-    # FIXED pre-1.0 # biases_initializer=tf.zeros_initializer,
-    biases_initializer=tf.zeros_initializer(),
+    biases_initializer=tf.zeros_initializer,
+    #biases_initializer=tf.zeros_initializer(),
     biases_regularizer=None,
     scope="conv2d"):
   with tf.variable_scope(scope):
@@ -134,8 +134,8 @@ def conv1d(
     activation_fn=None,
     weights_initializer=WEIGHT_INITIALIZER,
     weights_regularizer=None,
-    # FIXED pre-1.0 # biases_initializer=tf.zeros_initializer,
-    biases_initializer=tf.zeros_initializer(),
+    biases_initializer=tf.zeros_initializer,
+    #biases_initializer=tf.zeros_initializer(),
     biases_regularizer=None,
     scope="conv1d"):
   with tf.variable_scope(scope):
@@ -169,8 +169,8 @@ def conv1d(
 def diagonal_bilstm(inputs, conf, scope='diagonal_bilstm'):
   with tf.variable_scope(scope):
     def reverse(inputs):
-      # FIXED pre-1.0 # return tf.reverse(inputs, [False, False, True, False])
-      return tf.reverse(inputs, [2]) # [False, False, True, False])
+      return tf.reverse(inputs, [False, False, True, False])
+      #return tf.reverse(inputs, [2]) # [False, False, True, False])
 
     output_state_fw = diagonal_lstm(inputs, conf, scope='output_state_fw')
     output_state_bw = reverse(diagonal_lstm(reverse(inputs), conf, scope='output_state_bw'))
@@ -196,8 +196,8 @@ def diagonal_bilstm(inputs, conf, scope='diagonal_bilstm'):
     output_state_bw_only_last = tf.slice(output_state_bw, [0, height-1, 0, 0], [-1, 1, -1, -1])
     dummy_zeros = tf.zeros_like(output_state_bw_only_last)
 
-    # FIXED pre-1.0 # output_state_bw_with_last_zeros = tf.concat(1, [output_state_bw_except_last, dummy_zeros])
-    output_state_bw_with_last_zeros = tf.concat([output_state_bw_except_last, dummy_zeros], 1)
+    output_state_bw_with_last_zeros = tf.concat(1, [output_state_bw_except_last, dummy_zeros])
+    #output_state_bw_with_last_zeros = tf.concat([output_state_bw_except_last, dummy_zeros], 1)
 
     tf.add_to_collection('output_state_bw_with_last_zeros', output_state_bw_with_last_zeros)
 
@@ -224,10 +224,10 @@ def diagonal_lstm(inputs, conf, scope='diagonal_lstm'):
 
     tf.add_to_collection('rnn_inputs', rnn_inputs)
 
-    # FIXED pre-1.0 # rnn_input_list = [tf.squeeze(rnn_input, squeeze_dims=[1])
-    rnn_input_list = [tf.squeeze(rnn_input, axis=[1])
-        # FIXED pre-1.0 # for rnn_input in tf.split(split_dim=1, num_split=width, value=rnn_inputs)]
-        for rnn_input in tf.split(rnn_inputs, width, 1)]
+    rnn_input_list = [tf.squeeze(rnn_input, squeeze_dims=[1])
+    #rnn_input_list = [tf.squeeze(rnn_input, axis=[1])
+        for rnn_input in tf.split(split_dim=1, num_split=width, value=rnn_inputs)]
+        #for rnn_input in tf.split(rnn_inputs, width, 1)]
 
     cell = DiagonalLSTMCell(conf.hidden_dims, height, channel)
 
@@ -306,18 +306,18 @@ class DiagonalLSTMCell(rnn_cell.RNNCell):
       lstm_matrix = tf.sigmoid(s_to_s + i_to_s)
 
       # i = input_gate, g = new_input, f = forget_gate, o = output_gate
-      # FIXED pre-1.0 # i, g, f, o = tf.split(1, 4, lstm_matrix)
-      i, g, f, o = tf.split(lstm_matrix, 4, 1)
+      i, g, f, o = tf.split(1, 4, lstm_matrix)
+      #i, g, f, o = tf.split(lstm_matrix, 4, 1)
 
       c = f * c_prev + i * g
-      # FIXED pre-1.0 # h = tf.mul(o, tf.tanh(c), name='hid')
-      h = tf.multiply(o, tf.tanh(c), name='hid')
+      h = tf.mul(o, tf.tanh(c), name='hid')
+      #h = tf.multiply(o, tf.tanh(c), name='hid')
 
     logger.debug('[DiagonalLSTMCell] %s : %s %s -> %s %s' \
         % (scope, i_to_s.name, i_to_s.get_shape(), h.name, h.get_shape()))
 
-    # FIXED pre-1.0 # new_state = tf.concat(1, [c, h])
-    new_state = tf.concat([c, h], 1)
+    new_state = tf.concat(1, [c, h])
+    #new_state = tf.concat([c, h], 1)
     return h, new_state
 
 class RowLSTMCell(rnn_cell.RNNCell):
